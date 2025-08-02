@@ -43,12 +43,17 @@ from utils.inference_utils import (
     find_crop_norm_ratio,
     load_face3d_net,
     exp_aus_dict,
+    get_device,
+    clear_cache,
 )
 
 
 class Predictor(BasePredictor):
     def setup(self) -> None:
         """Load the model into memory to make running multiple predictions efficient"""
+        # Determine the best available device
+        device = get_device()
+            
         self.enhancer = FaceEnhancement(
             base_dir="checkpoints",
             size=512,
@@ -57,7 +62,7 @@ class Predictor(BasePredictor):
             sr_model="rrdb_realesrnet_psnr",
             channel_multiplier=2,
             narrow=1,
-            device="cuda",
+            device=device,
         )
         self.restorer = GFPGANer(
             model_path="checkpoints/GFPGANv1.3.pth",
@@ -65,13 +70,14 @@ class Predictor(BasePredictor):
             arch="clean",
             channel_multiplier=2,
             bg_upsampler=None,
+            device=device,
         )
         self.croper = Croper("checkpoints/shape_predictor_68_face_landmarks.dat")
         self.kp_extractor = KeypointExtractor()
 
         face3d_net_path = "checkpoints/face3d_pretrain_epoch_20.pth"
 
-        self.net_recon = load_face3d_net(face3d_net_path, "cuda")
+        self.net_recon = load_face3d_net(face3d_net_path, device)
         self.lm3d_std = load_lm3d("checkpoints/BFM")
 
     def predict(
@@ -80,7 +86,8 @@ class Predictor(BasePredictor):
         input_audio: Path = Input(description="Input audio file."),
     ) -> Path:
         """Run a single prediction on the model"""
-        device = "cuda"
+        # Determine the best available device
+        device = get_device()
         args = argparse.Namespace(
             DNet_path="checkpoints/DNet.pt",
             LNet_path="checkpoints/LNet.pth",
@@ -274,7 +281,7 @@ class Predictor(BasePredictor):
         else:
             print("[Step 3] Using saved stabilized video.")
             imgs = np.load("temp/" + base_name + "_stablized.npy")
-        torch.cuda.empty_cache()
+        clear_cache(device)
 
         if not args.audio.endswith(".wav"):
             command = "ffmpeg -loglevel error -y -i {} -strict -2 {}".format(
@@ -389,7 +396,7 @@ class Predictor(BasePredictor):
 
             pred = pred.cpu().numpy().transpose(0, 2, 3, 1) * 255.0
 
-            torch.cuda.empty_cache()
+            clear_cache(device)
             for p, f, xf, c in zip(pred, frames, f_frames, coords):
                 y1, y2, x1, x2 = c
                 p = cv2.resize(p.astype(np.uint8), (x2 - x1, y2 - y1))

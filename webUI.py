@@ -91,6 +91,10 @@ def concatenate_videos(video_segments, output_file):
     subprocess.run(command, check=True)
 
 
+# 在文件开头添加环境变量设置
+# import os
+# os.environ['GRADIO_ANALYTICS_ENABLED'] = 'False'
+
 with gradio.Blocks(
     title="Audio-based Lip Synchronization",
     theme=gr.themes.Base(
@@ -153,3 +157,5 @@ with gradio.Blocks(
     btn.click(fn=convert, inputs=[seg, v, a], outputs=[o])
 
 demo.queue().launch()
+# if __name__ == '__main__':
+#     demo.launch(share=False, server_name="0.0.0.0")  # 添加这两个参数

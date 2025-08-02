@@ -122,7 +122,8 @@ class BaseModel:
                 # assert os.path.isfile(load_path), "File '%s' does not exist." % load_path
                 
                 # pretrained_state_dict = torch.load(load_path, map_location=str(self.device))
-                pretrained_state_dict = torch.load('checkpoints/30_net_gen.pth', map_location=str('cuda:0'))
+                # Use CPU for loading, then move to device for compatibility with MPS
+                pretrained_state_dict = torch.load('checkpoints/30_net_gen.pth', map_location='cpu')
                 if hasattr(pretrained_state_dict, '_metadata'):
                     del pretrained_state_dict._metadata
 

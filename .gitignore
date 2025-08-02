@@ -13,3 +13,4 @@ results/*
 temp/*
 segments.txt
 .DS_Store
+venv_video_retalking/

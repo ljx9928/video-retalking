@@ -12,6 +12,34 @@ from third_part.face3d.models import networks
 import warnings
 warnings.filterwarnings("ignore")
 
+def get_device():
+    """Get the best available device for PyTorch"""
+    if torch.cuda.is_available():
+        return 'cuda'
+    elif hasattr(torch, 'backends') and hasattr(torch.backends, 'mps') and \
+         hasattr(torch.backends.mps, 'is_available') and torch.backends.mps.is_available() and \
+         hasattr(torch.backends.mps, 'is_built') and torch.backends.mps.is_built():
+        return 'mps'
+    else:
+        return 'cpu'
+
+def clear_cache(device=None):
+    """Clear device cache based on device type"""
+    if device is None:
+        device = get_device()
+    
+    if device == 'cuda':
+        torch.cuda.empty_cache()
+    elif device == 'mps':
+        # Check if torch.mps.empty_cache exists (PyTorch 2.0+)
+        if hasattr(torch, 'mps') and hasattr(torch.mps, 'empty_cache'):
+            torch.mps.empty_cache()
+        else:
+            # For older PyTorch versions, MPS cache clearing is not available
+            # but it's not critical for functionality
+            pass
+    # No cache clearing needed for CPU
+
 def options():
     parser = argparse.ArgumentParser(description='Inference code to lip-sync videos in the wild using Wav2Lip models')
 
@@ -107,7 +135,12 @@ def get_smoothened_boxes(boxes, T):
 
 def face_detect(images, args, jaw_correction=False, detector=None):
     if detector == None:
-        device = 'cuda:0' if torch.cuda.is_available() else 'cpu'
+        if torch.cuda.is_available():
+            device = 'cuda:0'
+        elif torch.backends.mps.is_available() and torch.backends.mps.is_built():
+            device = 'mps'
+        else:
+            device = 'cpu'
         detector = face_detection.FaceAlignment(face_detection.LandmarksType._2D, 
                                                 flip_input=False, device=device)
 
@@ -127,10 +160,38 @@ def face_detect(images, args, jaw_correction=False, detector=None):
 
     results = []
     pady1, pady2, padx1, padx2 = args.pads if jaw_correction else (0,20,0,0)
-    for rect, image in zip(predictions, images):
+    # Track consecutive face detection failures to limit warning messages
+    consecutive_failures = 0
+    max_consecutive_warnings = 5
+    for frame_idx, (rect, image) in enumerate(zip(predictions, images)):
         if rect is None:
-            cv2.imwrite('temp/faulty_frame.jpg', image) # check this frame where the face was not detected.
-            raise ValueError('Face not detected! Ensure the video contains a face in all the frames.')
+            # Limit warning messages for consecutive failures
+            if consecutive_failures < max_consecutive_warnings:
+                print(f'Warning: Face not detected in frame {frame_idx}. Using fallback detection.')
+            elif consecutive_failures == max_consecutive_warnings:
+                print(f'Warning: Face not detected in frame {frame_idx}. Suppressing further warnings for consecutive failures.')
+            
+            consecutive_failures += 1
+            
+            # Use the last successful detection or default values
+            if results:
+                # Use the last successful face detection
+                last_coords = results[-1]
+                results.append(last_coords)
+                if consecutive_failures <= max_consecutive_warnings:
+                    print(f'Using previous frame detection: {last_coords}')
+                continue
+            else:
+                # Default face region if no previous detection (center 50% of image)
+                h, w = image.shape[:2]
+                default_coords = [w//4, h//4, 3*w//4, 3*h//4]  # Center face region
+                results.append(default_coords)
+                if consecutive_failures <= max_consecutive_warnings:
+                    print(f'Using default center region: {default_coords}')
+                continue
+        else:
+            # Reset consecutive failures counter when detection succeeds
+            consecutive_failures = 0
 
         y1 = max(0, rect[1] - pady1)
         y2 = min(image.shape[0], rect[3] + pady2)
@@ -138,17 +199,26 @@ def face_detect(images, args, jaw_correction=False, detector=None):
         x2 = min(image.shape[1], rect[2] + padx2)
         results.append([x1, y1, x2, y2])
 
+    # Report total number of frames with failed detection
+    total_failures = sum(1 for i, rect in enumerate(predictions) if rect is None)
+    if total_failures > 0:
+        print(f'Note: Face detection failed for {total_failures} out of {len(images)} frames. Used fallback strategies.')
+
     boxes = np.array(results)
     if not args.nosmooth: boxes = get_smoothened_boxes(boxes, T=5)
     results = [[image[y1: y2, x1:x2], (y1, y2, x1, x2)] for image, (x1, y1, x2, y2) in zip(images, boxes)]
 
     del detector
-    torch.cuda.empty_cache()
+    # Clear cache using device-aware function
+    clear_cache()
     return results 
 
 def _load(checkpoint_path, device):
     if device == 'cuda':
         checkpoint = torch.load(checkpoint_path)
+    elif device == 'mps':
+        # Load to CPU first for MPS compatibility
+        checkpoint = torch.load(checkpoint_path, map_location='cpu')
     else:
         checkpoint = torch.load(checkpoint_path,
                                 map_location=lambda storage, loc: storage)

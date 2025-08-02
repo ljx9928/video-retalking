@@ -67,8 +67,38 @@ def align_face(filepath_or_image, predictor, output_size, detector=None,
 
 
 def crop_image(filepath, output_size, quad, enable_padding=False):
+    # Validate quad to prevent NaN errors
+    if quad is None or np.any(np.isnan(quad)):
+        print('Warning: Invalid quad detected (NaN values), using center crop fallback')
+        # Return a default center-cropped image
+        if isinstance(filepath, PIL.Image.Image):
+            img = filepath
+        else:
+            img = PIL.Image.open(filepath)
+        # Create center crop as fallback
+        w, h = img.size
+        size = min(w, h)
+        left = (w - size) // 2
+        top = (h - size) // 2
+        img = img.crop((left, top, left + size, top + size))
+        return img.resize((output_size, output_size), PIL.Image.LANCZOS)
+    
     x = (quad[3] - quad[1]) / 2
     qsize = np.hypot(*x) * 2
+    
+    # Validate qsize to prevent NaN conversion errors
+    if np.isnan(qsize) or qsize <= 0:
+        print('Warning: Invalid qsize detected (NaN or zero), using center crop fallback')
+        if isinstance(filepath, PIL.Image.Image):
+            img = filepath
+        else:
+            img = PIL.Image.open(filepath)
+        w, h = img.size
+        size = min(w, h)
+        left = (w - size) // 2
+        top = (h - size) // 2
+        img = img.crop((left, top, left + size, top + size))
+        return img.resize((output_size, output_size), PIL.Image.LANCZOS)
     # read image
     if isinstance(filepath, PIL.Image.Image):
         img = filepath
@@ -79,7 +109,7 @@ def crop_image(filepath, output_size, quad, enable_padding=False):
     shrink = int(np.floor(qsize / output_size * 0.5))
     if shrink > 1:
         rsize = (int(np.rint(float(img.size[0]) / shrink)), int(np.rint(float(img.size[1]) / shrink)))
-        img = img.resize(rsize, PIL.Image.ANTIALIAS)
+        img = img.resize(rsize, PIL.Image.LANCZOS)
         quad /= shrink
         qsize /= shrink
     # Crop.
@@ -111,10 +141,27 @@ def crop_image(filepath, output_size, quad, enable_padding=False):
     # Transform.
     img = img.transform((transform_size, transform_size), PIL.Image.QUAD, (quad + 0.5).flatten(), PIL.Image.BILINEAR)
     if output_size < transform_size:
-        img = img.resize((output_size, output_size), PIL.Image.ANTIALIAS)
+        img = img.resize((output_size, output_size), PIL.Image.LANCZOS)
     return img
 
 def compute_transform(lm, predictor, detector=None, scale=1.0, fa=None):
+    # Validate landmarks to prevent NaN propagation
+    if lm is None or len(lm) == 0:
+        print('Warning: No landmarks provided, using default face region')
+        # Return sensible default values for center face region
+        center = np.array([128.0, 128.0])
+        x_dir = np.array([64.0, 0.0])
+        y_dir = np.array([0.0, 64.0])
+        return center, x_dir, y_dir
+    
+    # Check for NaN values in landmarks
+    if np.any(np.isnan(lm)):
+        print('Warning: NaN values detected in landmarks, using default face region')
+        center = np.array([128.0, 128.0])
+        x_dir = np.array([64.0, 0.0]) 
+        y_dir = np.array([0.0, 64.0])
+        return center, x_dir, y_dir
+    
     # lm = get_landmark(filepath, predictor, detector, fa)
     # if lm is None:
         # raise Exception(f'Did not detect any faces in image: {filepath}')

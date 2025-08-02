@@ -55,6 +55,9 @@ class FaceAlignment:
 
         if 'cuda' in device:
             torch.backends.cudnn.benchmark = True
+        elif 'mps' in device:
+            # MPS doesn't use cudnn, and no special setup needed for older PyTorch versions
+            pass
 
         # Get the face detector
         face_detector_module = __import__('face_detection.detection.' + face_detector,

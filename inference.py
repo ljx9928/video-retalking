@@ -22,21 +22,22 @@ from utils import audio
 from utils.ffhq_preprocess import Croper
 from utils.alignment_stit import crop_faces, calc_alignment_coefficients, paste_image
 from utils.inference_utils import Laplacian_Pyramid_Blending_with_mask, face_detect, load_model, options, split_coeff, \
-                                  trans_image, transform_semantic, find_crop_norm_ratio, load_face3d_net, exp_aus_dict
+                                  trans_image, transform_semantic, find_crop_norm_ratio, load_face3d_net, exp_aus_dict, \
+                                  get_device, clear_cache
 import warnings
 warnings.filterwarnings("ignore")
 
 args = options()
 
 def main():    
-    device = 'cuda' if torch.cuda.is_available() else 'cpu'
+    device = get_device()
     print('[Info] Using {} for inference.'.format(device))
     os.makedirs(os.path.join('temp', args.tmp_dir), exist_ok=True)
 
     enhancer = FaceEnhancement(base_dir='checkpoints', size=512, model='GPEN-BFR-512', use_sr=False, \
                                sr_model='rrdb_realesrnet_psnr', channel_multiplier=2, narrow=1, device=device)
     restorer = GFPGANer(model_path='checkpoints/GFPGANv1.3.pth', upscale=1, arch='clean', \
-                        channel_multiplier=2, bg_upsampler=None)
+                        channel_multiplier=2, bg_upsampler=None, device=device)
 
     base_name = args.face.split('/')[-1]
     if os.path.isfile(args.face) and args.face.split('.')[1] in ['jpg', 'png', 'jpeg']:
@@ -170,7 +171,7 @@ def main():
     else:
         print('[Step 3] Using saved stabilized video.')
         imgs = np.load('temp/'+base_name+'_stablized.npy')
-    torch.cuda.empty_cache()
+    clear_cache(device)
 
     if not args.audio.endswith('.wav'):
         command = 'ffmpeg -loglevel error -y -i {} -strict -2 {}'.format(args.audio, 'temp/{}/temp.wav'.format(args.tmp_dir))
@@ -242,7 +243,7 @@ def main():
         
         pred = pred.cpu().numpy().transpose(0, 2, 3, 1) * 255.
 
-        torch.cuda.empty_cache()
+        clear_cache(device)
         for p, f, xf, c in zip(pred, frames, f_frames, coords):
             y1, y2, x1, x2 = c
             p = cv2.resize(p.astype(np.uint8), (x2 - x1, y2 - y1))
@@ -253,7 +254,7 @@ def main():
             # month region enhancement by GFPGAN
             cropped_faces, restored_faces, restored_img = restorer.enhance(
                 ff, has_aligned=False, only_center_face=True, paste_back=True)
-                # 0,   1,   2,   3,   4,   5,   6,   7,   8,  9, 10,  11,  12,
+                # 0,   0,   0,   0,   0,   0,   0,   0,   0,  0, 10,  11,  12,
             mm = [0,   0,   0,   0,   0,   0,   0,   0,   0,  0, 255, 255, 255, 0, 0, 0, 0, 0, 0]
             mouse_mask = np.zeros_like(restored_img)
             tmp_mask = enhancer.faceparser.process(restored_img[y1:y2, x1:x2], mm)[0]

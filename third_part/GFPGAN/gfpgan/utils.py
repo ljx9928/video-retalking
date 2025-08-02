@@ -27,14 +27,28 @@ class GFPGANer():
         arch (str): The GFPGAN architecture. Option: clean | original. Default: clean.
         channel_multiplier (int): Channel multiplier for large networks of StyleGAN2. Default: 2.
         bg_upsampler (nn.Module): The upsampler for the background. Default: None.
+        device (torch.device): Device to use. Default: None, will use CUDA if available, otherwise MPS if available, otherwise CPU.
     """
 
-    def __init__(self, model_path, upscale=2, arch='clean', channel_multiplier=2, bg_upsampler=None):
+    def __init__(self, model_path, upscale=2, arch='clean', channel_multiplier=2, bg_upsampler=None, device=None):
         self.upscale = upscale
         self.bg_upsampler = bg_upsampler
 
         # initialize model
-        self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+        if device is not None:
+            self.device = device if isinstance(device, torch.device) else torch.device(device)
+        elif torch.cuda.is_available():
+            self.device = torch.device('cuda')
+        elif hasattr(torch, 'backends') and hasattr(torch.backends, 'mps') and \
+             hasattr(torch.backends.mps, 'is_available') and torch.backends.mps.is_available() and \
+             hasattr(torch.backends.mps, 'is_built') and torch.backends.mps.is_built():
+            self.device = torch.device('mps')
+        else:
+            self.device = torch.device('cpu')
+            
+        # For MPS compatibility, we may need to use CPU for face detection
+        self.detection_device = torch.device('cpu') if self.device.type == 'mps' else self.device
+        
         # initialize the GFP-GAN
         if arch == 'clean':
             self.gfpgan = GFPGANv1Clean(
@@ -79,7 +93,7 @@ class GFPGANer():
             crop_ratio=(1, 1),
             det_model='retinaface_resnet50',
             save_ext='png',
-            device=self.device)
+            device=self.detection_device)
 
         if model_path.startswith('https://'):
             model_path = load_file_from_url(

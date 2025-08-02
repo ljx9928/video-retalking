@@ -62,7 +62,8 @@ class FaceParse(object):
         return mask
 
     def img2tensor(self, img):
-        img = img[..., ::-1] # BGR to RGB
+        # img = img[..., ::-1] # BGR to RGB
+        img = np.array(img[..., ::-1], dtype=np.float32)  # BGR to RGB
         img = img / 255. * 2 - 1
         img_tensor = torch.from_numpy(img.transpose(2, 0, 1)).unsqueeze(0).to(self.device)
         return img_tensor.float()

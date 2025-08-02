@@ -48,7 +48,17 @@ class KeypointExtractor():
                         print(e)
                         break    
                 except TypeError:
-                    print('No face detected in this image')
+                    # Limit warning messages for face detection failures
+                    # Only show warning for first few failures to avoid flooding output
+                    if not hasattr(self, '_kp_warning_count'):
+                        self._kp_warning_count = 0
+                    
+                    self._kp_warning_count += 1
+                    if self._kp_warning_count <= 3:  # Only show first 3 warnings
+                        print('Warning: No face detected in image, using fallback')
+                    elif self._kp_warning_count == 4:  # Indicate we're suppressing further warnings
+                        print('Warning: No face detected in image, suppressing further warnings')
+                    
                     shape = [68, 2]
                     keypoints = -1. * np.ones(shape)                    
                     break

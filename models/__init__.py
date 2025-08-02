@@ -5,7 +5,12 @@ from models.ENet import ENet
 
 
 def _load(checkpoint_path):
-    map_location=None if torch.cuda.is_available() else torch.device('cpu')
+    if torch.cuda.is_available():
+        map_location = None
+    elif torch.backends.mps.is_available() and torch.backends.mps.is_built():
+        map_location = 'cpu'  # Load to CPU first for MPS compatibility
+    else:
+        map_location = torch.device('cpu')
     checkpoint = torch.load(checkpoint_path, map_location=map_location)
     return checkpoint
 
@@ -32,6 +37,13 @@ def load_network(args):
 def load_DNet(args):
     D_Net = DNet()
     print("Load checkpoint from: {}".format(args.DNet_path))
-    checkpoint =  torch.load(args.DNet_path, map_location=lambda storage, loc: storage)
+    # Use proper map_location for different devices
+    if torch.cuda.is_available():
+        map_location = lambda storage, loc: storage
+    elif torch.backends.mps.is_available() and torch.backends.mps.is_built():
+        map_location = 'cpu'  # Load to CPU first for MPS compatibility
+    else:
+        map_location = lambda storage, loc: storage
+    checkpoint = torch.load(args.DNet_path, map_location=map_location)
     D_Net.load_state_dict(checkpoint['net_G_ema'], strict=False)
     return D_Net.eval()

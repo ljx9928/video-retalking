@@ -58,6 +58,7 @@ class FaceEnhancement(object):
         height, width = img.shape[:2]
         full_mask = np.zeros((height, width), dtype=np.float32)
         full_img = np.zeros(ori_img.shape, dtype=np.uint8)
+        mask_sharp = np.zeros((height, width), dtype=np.float32)
 
         for i, (faceb, facial5points) in enumerate(zip(facebs, landms)):
             if faceb[4]<self.threshold: continue
@@ -90,13 +91,16 @@ class FaceEnhancement(object):
 
             # no ear, no neck, no hair&hat,  only face region
             mm = [0, 255, 255, 255, 255, 255, 255, 255, 0, 0, 255, 255, 255, 0, 0, 0, 0, 0, 0]
-            mask_sharp = self.faceparser.process(ef, mm)[0]/255.
-            tmp_mask = self.mask_postprocess(mask_sharp)
+            face_mask_sharp = self.faceparser.process(ef, mm)[0]/255.
+            tmp_mask = self.mask_postprocess(face_mask_sharp)
             tmp_mask = cv2.resize(tmp_mask, ef.shape[:2])
-            mask_sharp = cv2.resize(mask_sharp, ef.shape[:2])
+            face_mask_sharp = cv2.resize(face_mask_sharp, ef.shape[:2])
 
             tmp_mask = cv2.warpAffine(tmp_mask, tfm_inv, (width, height), flags=3)
-            mask_sharp = cv2.warpAffine(mask_sharp, tfm_inv, (width, height), flags=3)
+            face_mask_sharp = cv2.warpAffine(face_mask_sharp, tfm_inv, (width, height), flags=3)
+            
+            # Accumulate mask_sharp from all faces
+            mask_sharp = np.maximum(mask_sharp, face_mask_sharp)
 
             if min(fh, fw)<100: # gaussian filter for small faces
                 ef = cv2.filter2D(ef, -1, self.kernel)
